@@ -150,3 +150,48 @@ async def test_update_user_role(db_session: AsyncSession, user: User):
     await db_session.commit()
     await db_session.refresh(user)
     assert user.role == UserRole.ADMIN, "Role update should persist correctly in the database"
+
+def test_user_role_enum_integrity():
+    """
+    Tests that the UserRole enum matches the database's expectations.
+    """
+    enum_values = [role.value for role in UserRole]
+    expected_values = ["ANONYMOUS", "AUTHENTICATED", "MANAGER", "ADMIN"]
+    assert enum_values == expected_values, "UserRole enum values should match expected roles"
+
+@pytest.mark.asyncio
+async def test_role_change_persistence(db_session: AsyncSession, user: User):
+    """
+    Tests that changing a user's role persists in the database.
+    """
+    original_role = user.role
+    new_role = UserRole.ADMIN if original_role != UserRole.ADMIN else UserRole.MANAGER
+    user.role = new_role
+    await db_session.commit()
+    await db_session.refresh(user)
+    assert user.role == new_role, "Role change should persist in the database"
+
+@pytest.mark.asyncio
+async def test_role_based_access(user: User, admin_user: User, manager_user: User):
+    """
+    Tests that role-based access control is correctly enforced.
+    """
+    assert user.has_role(UserRole.AUTHENTICATED), "User should have AUTHENTICATED role"
+    assert not user.has_role(UserRole.ADMIN), "User should not have ADMIN role"
+
+    assert admin_user.has_role(UserRole.ADMIN), "Admin should have ADMIN role"
+    assert not admin_user.has_role(UserRole.AUTHENTICATED), "Admin should not have AUTHENTICATED role"
+
+    assert manager_user.has_role(UserRole.MANAGER), "Manager should have MANAGER role"
+    assert not manager_user.has_role(UserRole.ADMIN), "Manager should not have ADMIN role"
+
+@pytest.mark.asyncio
+async def test_default_role_on_creation(db_session: AsyncSession):
+    """
+    Tests that the default role is 'ANONYMOUS' when not specified during user creation.
+    """
+    user = User(nickname="newuser", email="newuser@example.com", hashed_password="hashed_password")
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    assert user.role == UserRole.ANONYMOUS, "Default role should be 'ANONYMOUS'"
